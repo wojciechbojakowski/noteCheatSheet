@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#7c3aed">
+  <title>Obsidian PWA + Cheatsheet</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <!-- Kolorowanie składni -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Górny pasek -->
+    <header class="topbar">
+      <button id="btn-menu" class="icon-btn" title="Przedmioty i pliki">☰</button>
+      <div class="note-title-wrap">
+        <span id="current-note-name">Wybierz notatkę</span>
+        <span id="save-status" class="status-badge"></span>
+      </div>
+      <div class="top-tabs">
+        <button class="tab-btn active" data-view="editor">Edytuj</button>
+        <button class="tab-btn" data-view="preview">Podgląd</button>
+        <button class="tab-btn" data-view="cheatsheet">Ściąga</button>
+      </div>
+    </header>
+
+    <!-- Ostrzeżenie dla przeglądarek bez File System API (np. iOS Safari) -->
+    <div id="fs-warning" class="banner-warning hidden">
+      Twoja przeglądarka nie wspiera bezpośredniego dostępu do lokalnych folderów (wymagany Chrome na Androidzie lub Desktop). Zakładka <b>Ściąga</b> działa normalnie offline.
+    </div>
+
+    <!-- Baner szybkiego wznowienia folderu po restarcie aplikacji -->
+    <div id="reconnect-banner" class="banner-info hidden">
+      <span>Ostatni folder: <strong id="last-vault-name"></strong></span>
+      <button id="btn-reconnect" class="btn-primary-sm">Połącz ponownie</button>
+    </div>
+
+    <!-- Główny obszar roboczy -->
+    <main class="main-area">
+      <!-- Panel boczny: Przedmioty i Notatki -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <button id="btn-open-vault" class="btn-primary">📂 Otwórz Vault Obsidiana</button>
+          <div class="sidebar-actions">
+            <button id="btn-new-subject" class="btn-sec" disabled>+ Przedmiot</button>
+            <button id="btn-new-note" class="btn-sec" disabled>+ Notatka</button>
+          </div>
+        </div>
+        <div id="file-tree" class="file-tree">
+          <p class="empty-msg">Kliknij „Otwórz Vault Obsidiana” i wskaż swój folder z notatkami.</p>
+        </div>
+      </aside>
+      <div id="sidebar-backdrop" class="backdrop hidden"></div>
+
+      <!-- Widok 1: Edytor Markdown -->
+      <section id="view-editor" class="view active">
+        <textarea id="md-editor" placeholder="Wybierz notatkę z menu ☰ albo utwórz nową...&#10;&#10;Możesz tu pisać w Markdownie, wklejać kod lub robić zdjęcia notatek odręcznych przyciskiem 📷 na dole."></textarea>
+        
+        <!-- Pasek narzędzi nad klawiaturą -->
+        <div class="editor-toolbar">
+          <button type="button" data-wrap="# |">#</button>
+          <button type="button" data-wrap="## |##</button>
+          <button type="button" data-wrap="**|**"><b>B</b></button>
+          <button type="button" data-wrap="*|*"><i>I</i></button>
+          <button type="button" data-wrap="`|`">`kod`</button>
+          <button type="button" data-wrap="```\n|\n```">```</button>
+          <button type="button" data-wrap="- [ ] |">☑</button>
+          <button type="button" data-wrap="[[|]]">[[]]</button>
+          <button type="button" id="btn-camera" class="btn-cam" title="Zrób zdjęcie notatki odręcznej">📷</button>
+          <button type="button" id="btn-gallery" title="Wstaw obrazek z galerii">🖼️</button>
+          <label class="scan-toggle" title="Filtr skanera (podwyższony kontrast dla kartki)">
+            <input type="checkbox" id="chk-scan-filter" checked> Skan
+          </label>
+          <button type="button" id="btn-save-now" class="btn-save">💾</button>
+        </div>
+        <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+        <input type="file" id="gallery-input" accept="image/*" hidden>
+      </section>
+
+      <!-- Widok 2: Podgląd Markdown -->
+      <section id="view-preview" class="view">
+        <article id="md-preview" class="markdown-body">
+          <p class="empty-msg">Brak otwartej notatki do podglądu.</p>
+        </article>
+      </section>
+
+      <!-- Widok 3: Wbudowany Cheatsheet -->
+       <!-- Widok 3: Wbudowany / Lokalny Cheatsheet -->
+      <section id="view-cheatsheet" class="view">
+        <div class="cheat-controls">
+          <div class="cheat-top-row">
+            <input type="search" id="cheat-search" placeholder="🔍 Szukaj w ściągach...">
+            <button id="btn-toggle-add-cheat" class="btn-primary-sm" title="Dodaj nowy wpis">+ Wpis</button>
+          </div>
+
+          <!-- Baner widoczny, gdy Vault jest otwarty, ale brak jeszcze folderu Cheatsheets -->
+          <div id="cheat-init-banner" class="cheat-init-banner hidden">
+            <span>Chcesz zapisywać i edytować ściągi w folderze <b>Cheatsheets/</b>?</span>
+            <button id="btn-init-cheats-folder" class="btn-primary-sm">Utwórz folder</button>
+          </div>
+
+          <!-- Formularz dodawania nowego wpisu -->
+          <form id="add-cheat-form" class="add-cheat-form hidden">
+            <div class="form-row">
+              <input type="text" id="new-cheat-cat" list="cheat-cat-datalist" placeholder="Plik/Kategoria (np. cpp, linux)" required>
+              <datalist id="cheat-cat-datalist"></datalist>
+              <input type="text" id="new-cheat-lang" placeholder="Język (np. cpp, python, bash)">
+            </div>
+            <input type="text" id="new-cheat-title" placeholder="Tytuł (np. Połączenie z bazą SQLite)" required>
+            <textarea id="new-cheat-code" rows="4" placeholder="Wklej kod lub treść notatki..." required></textarea>
+            <div class="form-actions">
+              <button type="button" id="btn-cancel-cheat" class="btn-sec">Anuluj</button>
+              <button type="submit" class="btn-primary-sm">💾 Zapisz w Cheatsheets/</button>
+            </div>
+          </form>
+
+          <div id="cheat-categories" class="cheat-pills"></div>
+        </div>
+        <div id="cheat-list" class="cheat-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast powiadomień -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Biblioteki do Markdown i składni -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
